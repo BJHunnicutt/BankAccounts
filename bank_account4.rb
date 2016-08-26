@@ -57,7 +57,6 @@ module Bank
         owners << Bank::Owner.new(owner_id: line[0].to_i, first_name: line[2], last_name: line[1], street_address: line[3], city: line[4], state: line[5])
       end
       ### Initialize new accounts with their corresponding owners
-      ### This cannot be the best way to do this....
       # First, go line-by-line through the accounts
       CSV.open("./support/accounts.csv", 'r').each do |line|
         # Second find the correspondence between the account id's and the owner_id's
@@ -74,6 +73,8 @@ module Bank
           end
         end
       end
+          ### This cannot be the best way to do this....
+          # In retrospect, it would have been good to build both the owner objects and account objects without owners, and then update the account objects with owners by going through the correspondence file. that may make the above only 1 or 2 loops...  
 
     end
 
