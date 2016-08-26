@@ -57,7 +57,7 @@ module Bank
         owners << Bank::Owner.new(owner_id: line[0].to_i, first_name: line[2], last_name: line[1], street_address: line[3], city: line[4], state: line[5])
       end
       ### Initialize new accounts with their corresponding owners
-
+      ### This cannot be the best way to do this....
       # First, go line-by-line through the accounts
       CSV.open("./support/accounts.csv", 'r').each do |line|
         # Second find the correspondence between the account id's and the owner_id's
@@ -144,10 +144,6 @@ module Bank
       minimum_balance_check(minimum_balance, balance)
     end
 
-    # Instance Method for withdrawing from the Account
-    def withdraw(withdrawal_amt = 0)
-      super
-    end
 
     ## Instance method to Add interest to the SavingsAccount:
     def add_interest(rate) # rate input in percent (i.e. 0.25%)
@@ -166,10 +162,8 @@ module Bank
     def initialize(account_no, balance, date, owner = nil)
       super
       @@check_no = 1
-      # Each direct withdrawal 'transaction' from the checking account incurs a fee of $1
       @withdrawal_fee = 1
     end
-
 
     def withdraw_using_check(withdrawal_amt)
 
@@ -200,52 +194,171 @@ module Bank
     end
   end
 
+  class MoneyMarketAccount < SavingsAccount # By inheriting SavingsAccount don't have to rewrite interest method
+    attr_reader :active, :below_minimum_balance_fee
+
+    def initialize(account_no, balance, date, owner = nil)
+      super
+      @minimum_balance = 10000
+      @@transaction_no = 1
+      # Allows the account to become inactive if it drops below minimum_balance
+      @active = true
+      # Each direct withdrawal 'transaction' from the checking account incurs a fee of $1
+      @withdrawal_fee = 0
+      @below_minimum_balance_fee = 100
+
+      minimum_balance_check(minimum_balance, balance)
+    end
+
+    def withdraw(withdrawal_amt)
+
+      if check_transaction_status # If there are < 6 transactions this month
+        if check_account_status # If the account isn't already below minimum
+          # Determine if withdrawal amount below minimum, if not, withdraw
+          if (@balance - withdrawal_amt) < minimum_balance
+            overdraft_warning(withdrawal_amt, below_minimum_balance_fee)
+            @balance = @balance - withdrawal_amt - below_minimum_balance_fee
+          else
+            @balance = @balance - withdrawal_amt
+          end
+          add_transaction
+        end
+      end
+      # puts "Transaction ##{@@transaction_no-1}, balance: #{@balance}, withdrawal amt: #{withdrawal_amt}"
+      return @balance
+    end
+
+    # Method for depositing in the Account
+    def deposit(deposit_amt = 0)
+      # Exception to transaction limit: A deposit performed to reach or exceed the minimum balance of $10,000 is not counted as part of the 6 transactions.
+      if check_account_status == false && (@balance + deposit_amt >= minimum_balance)
+        puts Rainbow("Thank you for your deposit, your account has been unfrozen.").green
+        super # but don't add to transactions
+      elsif check_transaction_status
+        super
+
+        # Each deposit will be counted against the maximum number of transactions
+        add_transaction
+        if check_account_status
+          @active = true
+        end
+
+      end
+
+      return @balance
+    end
+
+
+    def add_transaction
+      @@transaction_no += 1 # Keep a tally of transactions used
+      if @@transaction_no > 6
+        @active = false
+      end
+    end
+
+    def check_transaction_status
+      if @@transaction_no > 6
+        puts Rainbow("\nYou have reached your transaction limit for the month, please use >> Bank::MoneyMarketAccount.reset_transactions to continue to the next month.").orange
+        return false
+      else
+        return true
+      end
+    end
+
+    def check_account_status
+      if @balance < minimum_balance
+        puts Rainbow("\n*** Your Money Market Account is FROZEN because it is below it's minimum balance of $#{minimum_balance}. Please deposit at least #{minimum_balance - @balance} to make any further withdrawals. ***").red
+        return false
+      else
+        return true
+      end
+    end
+
+    def overdraft_warning(withdrawal_amt, below_minimum_balance_fee = 0)
+      puts Rainbow("\n*** This transaction brings your Money Market Account below it's minimum balance of $#{minimum_balance} and will incur a fee of $#{below_minimum_balance_fee}, making your new balance $" + sprintf("%.2f", (@balance - withdrawal_amt - below_minimum_balance_fee)) + ". Please deposit at least $#{minimum_balance - (@balance - withdrawal_amt - below_minimum_balance_fee)} to make any further withdrawals. ***").yellow
+      @active = false
+    end
+
+    # Resets the number of checks used to zero
+    def reset_transactions
+      @@transaction_no = 1
+      puts "Welcome to the new month!"
+      @active = true
+    end
+
+    def self.transaction_no_reader
+      return @@transaction_no
+    end
+
+  end
 end
 
 
 
 
 ###### ----------------- Checking Wave 1 -------------------- #########
-b1 = Bank::Account.new(1000,100000,'1000-01-11 11:00:00 -0800')
-b2 = Bank::Account.new(22222,2222222,'1222-02-22 22:00:00 -0800')
-
-b1.deposit(100.50)
-b1.withdraw(500)
-
-
-###### ----------------- Checking Wave 2 -------------------- #########
-bulk_accounts = Bank::Account.import_csvs
-
-puts
-puts Rainbow(b1.account_overview).yellow
-puts "\n"
-puts "Balance: #{b1.balance}"
-puts "Account ID: #{b1.id}"
-puts "Owner: #{b1.owner.first_name} #{b1.owner.last_name}"
-
-puts
-puts "There are #{Bank::Account.all.length} accounts"
-puts Rainbow(Bank::Account.find(1214).account_overview).yellow
-
-
-###### ----------------- Checking Wave 3 -------------------- #########
-s1 = Bank::SavingsAccount.new(1,5,'1111-01-11 11:00:00 -0800')
-s1.withdraw(20)
-puts "Current balance: #{s1.balance}"
-puts "Interest: #{s1.add_interest(0.25)}"
-puts
-
-c1 = Bank::CheckingAccount.new(2,50,'2222-02-22 22:00:00 -0200')
-puts Rainbow(Bank::CheckingAccount.find(2).account_overview).yellow
-c1.withdraw(4)
-puts
-5.times {c1.withdraw_using_check(5)}
+# b1 = Bank::Account.new(1000,100000,'1000-01-11 11:00:00 -0800')
+# b2 = Bank::Account.new(22222,2222222,'1222-02-22 22:00:00 -0800')
 #
-# c1.deposit(27)
-# puts "Current balance: #{c1.balance}"
-# 5.times {c1.withdraw_using_check(5)}
+# b1.deposit(100.50)
+# b1.withdraw(500)
 #
-# c1.reset_checks
-# c1.deposit(500)
-# puts "Current balance: #{c1.balance}"
+#
+# ###### ----------------- Checking Wave 2 -------------------- #########
+# bulk_accounts = Bank::Account.import_csvs
+#
+# puts
+# puts Rainbow(b1.account_overview).yellow
+# puts "\n"
+# puts "Balance: #{b1.balance}"
+# puts "Account ID: #{b1.id}"
+# puts "Owner: #{b1.owner.first_name} #{b1.owner.last_name}"
+#
+# puts
+# puts "There are #{Bank::Account.all.length} accounts"
+# puts Rainbow(Bank::Account.find(1214).account_overview).yellow
+#
+#
+# ###### ----------------- Checking Wave 3 -------------------- #########
+# s1 = Bank::SavingsAccount.new(1,30,'1111-01-11 11:00:00 -0800')
+# s1.withdraw(10)
+# puts "Current balance: #{s1.balance}"
+# puts "Interest: #{s1.add_interest(0.25)}"
+# puts
+#
+# c1 = Bank::CheckingAccount.new(2,50,'2222-02-22 22:00:00 -0200')
+# puts Rainbow(Bank::CheckingAccount.find(2).account_overview).blue
+# c1.withdraw(4)
+# puts
 # 5.times {c1.withdraw_using_check(5)}
+
+
+###### ------------- Checking Wave 3 OPTIONAL -------------- #########
+
+m1 = Bank::MoneyMarketAccount.new(255555,13000,'1999-12-31 23:59:59 -0200')
+puts Rainbow(Bank::CheckingAccount.find(255555).account_overview).cyan
+puts
+
+3.times {puts "\nNew WITHDRAWAL:"; puts m1.withdraw(5000)}
+puts
+
+puts "\nNew DEPOSIT:"
+puts m1.deposit(500000)
+puts
+
+5.times {puts "\nNew WITHDRAWAL:"; puts m1.withdraw(5000)}
+puts
+
+puts "\nNew DEPOSIT:"
+puts m1.deposit(500000)
+puts
+
+puts "\nNew MONTH:"
+puts m1.reset_transactions
+puts
+
+puts "\nNew DEPOSIT:"
+puts m1.deposit(500000)
+puts
+
+puts "Interest: #{m1.add_interest(0.25)}"
